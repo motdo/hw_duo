@@ -1,0 +1,19 @@
+body {
+    font-family: Arial;
+    margin: 20px;
+}
+
+header {
+    background: #333;
+    color: white;
+    padding: 10px;
+}
+
+nav a {
+    color: white;
+    margin-right: 10px;
+}
+
+.login-box, .search-box {
+    margin-top: 20px;
+}
