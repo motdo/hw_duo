@@ -2,30 +2,38 @@
 
 {% block content %}
 
-<div class="search-box">
-    <h2>주소록</h2>
+<h2>주소록</h2>
 
-    <input type="text" id="searchInput" placeholder="검색어 입력">
-    <button onclick="search()">검색</button>
-
-    <br><br>
-
+<div>
     <input type="text" id="name" placeholder="이름">
     <input type="text" id="phone" placeholder="전화번호">
+    <input type="text" id="email" placeholder="이메일">
 
     <button onclick="addContact()">추가</button>
-
-    <table border="1">
-        <thead>
-            <tr>
-                <th>이름</th>
-                <th>전화번호</th>
-                <th>관리</th>
-            </tr>
-        </thead>
-        <tbody id="tableBody"></tbody>
-    </table>
 </div>
+
+<br>
+
+<div>
+    <input type="text" id="searchInput" placeholder="검색어 입력">
+
+    <button onclick="loadContacts()">검색</button>
+</div>
+
+<br>
+
+<table border="1" width="100%">
+    <thead>
+        <tr>
+            <th>이름</th>
+            <th>전화번호</th>
+            <th>이메일</th>
+            <th>관리</th>
+        </tr>
+    </thead>
+
+    <tbody id="tableBody"></tbody>
+</table>
 
 <script src="/static/js/search.js"></script>
 
