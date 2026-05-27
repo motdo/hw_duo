@@ -7,17 +7,20 @@
 </head>
 <body>
 
-    <header>
-        <h1>주소록 시스템</h1>
-        <nav>
-            <a href="/auth/login">로그인</a>
-            <a href="/search">검색</a>
-        </nav>
-    </header>
+<header>
+    <h1>주소록 시스템</h1>
 
-    <main>
-        {% block content %}{% endblock %}
-    </main>
+    <nav>
+        {% if g.user %}
+            <span>{{ g.user.username }}님</span>
+            <a href="{{ url_for('auth.logout') }}">로그아웃</a>
+        {% endif %}
+    </nav>
+</header>
+
+<main>
+    {% block content %}{% endblock %}
+</main>
 
 </body>
 </html>

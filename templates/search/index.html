@@ -3,7 +3,7 @@
 {% block content %}
 
 <div class="search-box">
-    <h2>주소록 검색</h2>
+    <h2>주소록</h2>
 
     <input type="text" id="searchInput" placeholder="검색어 입력">
     <button onclick="search()">검색</button>
@@ -12,6 +12,7 @@
 
     <input type="text" id="name" placeholder="이름">
     <input type="text" id="phone" placeholder="전화번호">
+
     <button onclick="addContact()">추가</button>
 
     <table border="1">
@@ -19,6 +20,7 @@
             <tr>
                 <th>이름</th>
                 <th>전화번호</th>
+                <th>관리</th>
             </tr>
         </thead>
         <tbody id="tableBody"></tbody>
