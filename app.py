@@ -1,7 +1,8 @@
 import os
-import sqlite3
 from functools import wraps
-from pathlib import Path
+
+import mysql.connector
+from dotenv import load_dotenv
 
 from flask import (
     Flask,
@@ -21,10 +22,9 @@ from werkzeug.security import (
 )
 
 # =====================
-# PATH
+# ENV
 # =====================
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "instance" / "addressbook.sqlite"
+load_dotenv()
 
 # =====================
 # BLUEPRINT
@@ -40,18 +40,20 @@ def create_app():
 
     app = Flask(__name__)
 
-    app.config["SECRET_KEY"] = os.environ.get(
+    app.config["SECRET_KEY"] = os.getenv(
         "SECRET_KEY",
         "dev"
     )
-
-    os.makedirs(BASE_DIR / "instance", exist_ok=True)
 
     app.teardown_appcontext(close_db)
     app.before_request(load_user)
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(search_bp)
+
+    # 테이블 자동 생성
+    with app.app_context():
+        init_db()
 
     @app.route("/")
     def index():
@@ -71,8 +73,13 @@ def get_db():
 
     if "db" not in g:
 
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
+        g.db = mysql.connector.connect(
+            host=os.getenv("DB_HOST"),
+            port=int(os.getenv("DB_PORT")),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            database=os.getenv("DB_NAME")
+        )
 
     return g.db
 
@@ -86,6 +93,47 @@ def close_db(error=None):
 
 
 # =====================
+# INIT DB
+# =====================
+def init_db():
+
+    db = get_db()
+    cursor = db.cursor()
+
+    # users 테이블
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(100) UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL
+        )
+        """
+    )
+
+    # contacts 테이블
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS contacts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            phone VARCHAR(100),
+            email VARCHAR(255),
+
+            FOREIGN KEY (user_id)
+            REFERENCES users(id)
+            ON DELETE CASCADE
+        )
+        """
+    )
+
+    db.commit()
+
+    cursor.close()
+
+
+# =====================
 # USER
 # =====================
 def load_user():
@@ -96,10 +144,17 @@ def load_user():
 
     if user_id:
 
-        g.user = get_db().execute(
-            "SELECT * FROM users WHERE id=?",
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
+
+        cursor.execute(
+            "SELECT * FROM users WHERE id=%s",
             (user_id,)
-        ).fetchone()
+        )
+
+        g.user = cursor.fetchone()
+
+        cursor.close()
 
 
 def login_required(view):
@@ -126,10 +181,17 @@ def login():
         username = request.form.get("username")
         password = request.form.get("password")
 
-        user = get_db().execute(
-            "SELECT * FROM users WHERE username=?",
+        db = get_db()
+        cursor = db.cursor(dictionary=True)
+
+        cursor.execute(
+            "SELECT * FROM users WHERE username=%s",
             (username,)
-        ).fetchone()
+        )
+
+        user = cursor.fetchone()
+
+        cursor.close()
 
         if user and check_password_hash(
             user["password_hash"],
@@ -158,20 +220,31 @@ def register():
         password = request.form.get("password")
 
         db = get_db()
+        cursor = db.cursor()
 
-        db.execute(
-            """
-            INSERT INTO users
-            (username, password_hash)
-            VALUES (?, ?)
-            """,
-            (
-                username,
-                generate_password_hash(password)
+        try:
+
+            cursor.execute(
+                """
+                INSERT INTO users
+                (username, password_hash)
+                VALUES (%s, %s)
+                """,
+                (
+                    username,
+                    generate_password_hash(password)
+                )
             )
-        )
 
-        db.commit()
+            db.commit()
+
+        except mysql.connector.Error as e:
+
+            return f"회원가입 오류: {e}"
+
+        finally:
+
+            cursor.close()
 
         return redirect(url_for("auth.login"))
 
@@ -208,17 +281,20 @@ def list_contacts():
 
     q = request.args.get("q", "").strip()
 
+    db = get_db()
+    cursor = db.cursor(dictionary=True)
+
     if q:
 
-        rows = get_db().execute(
+        cursor.execute(
             """
             SELECT *
             FROM contacts
-            WHERE user_id=?
+            WHERE user_id=%s
             AND (
-                name LIKE ?
-                OR phone LIKE ?
-                OR email LIKE ?
+                name LIKE %s
+                OR phone LIKE %s
+                OR email LIKE %s
             )
             ORDER BY id DESC
             """,
@@ -228,22 +304,26 @@ def list_contacts():
                 f"%{q}%",
                 f"%{q}%"
             )
-        ).fetchall()
+        )
 
     else:
 
-        rows = get_db().execute(
+        cursor.execute(
             """
             SELECT *
             FROM contacts
-            WHERE user_id=?
+            WHERE user_id=%s
             ORDER BY id DESC
             """,
             (session["user_id"],)
-        ).fetchall()
+        )
+
+    rows = cursor.fetchall()
+
+    cursor.close()
 
     return jsonify({
-        "contacts": [dict(row) for row in rows]
+        "contacts": rows
     })
 
 
@@ -265,11 +345,14 @@ def create_contact():
             "error": "이름 입력"
         })
 
-    get_db().execute(
+    db = get_db()
+    cursor = db.cursor()
+
+    cursor.execute(
         """
         INSERT INTO contacts
         (user_id, name, phone, email)
-        VALUES (?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s)
         """,
         (
             session["user_id"],
@@ -279,7 +362,9 @@ def create_contact():
         )
     )
 
-    get_db().commit()
+    db.commit()
+
+    cursor.close()
 
     return jsonify({
         "success": True
@@ -297,16 +382,19 @@ def update_contact(id):
     phone = request.form.get("phone", "").strip()
     email = request.form.get("email", "").strip()
 
-    get_db().execute(
+    db = get_db()
+    cursor = db.cursor()
+
+    cursor.execute(
         """
         UPDATE contacts
         SET
-            name=?,
-            phone=?,
-            email=?
+            name=%s,
+            phone=%s,
+            email=%s
         WHERE
-            id=?
-            AND user_id=?
+            id=%s
+            AND user_id=%s
         """,
         (
             name,
@@ -317,7 +405,9 @@ def update_contact(id):
         )
     )
 
-    get_db().commit()
+    db.commit()
+
+    cursor.close()
 
     return jsonify({
         "success": True
@@ -331,11 +421,14 @@ def update_contact(id):
 @login_required
 def delete_contact(id):
 
-    get_db().execute(
+    db = get_db()
+    cursor = db.cursor()
+
+    cursor.execute(
         """
         DELETE FROM contacts
-        WHERE id=?
-        AND user_id=?
+        WHERE id=%s
+        AND user_id=%s
         """,
         (
             id,
@@ -343,7 +436,9 @@ def delete_contact(id):
         )
     )
 
-    get_db().commit()
+    db.commit()
+
+    cursor.close()
 
     return jsonify({
         "success": True
